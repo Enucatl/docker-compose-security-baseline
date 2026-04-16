@@ -23,3 +23,5 @@ services:
 volumes:
   redis-data:
 ```
+
+The `codex_pipeline.py` helper writes confirmed findings to `validated/` and sends invalid or unverifiable reports to `rejected/`. Only the files in `validated/` are used when generating `validated/fix_plan.md`, which keeps the remediation plan focused on security issues that were actually verified.
