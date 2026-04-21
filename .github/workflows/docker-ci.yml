@@ -187,7 +187,7 @@ jobs:
       - name: Scan filesystem with Trivy
         id: fs_table
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
         with:
           scan-type: fs
           scan-ref: ${{ inputs.context }}
@@ -197,7 +197,7 @@ jobs:
           severity: ${{ inputs.trivy_severity }}
 
       - name: Write filesystem SARIF
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
         with:
           scan-type: fs
           scan-ref: ${{ inputs.context }}
@@ -211,7 +211,7 @@ jobs:
         id: image_table
         if: ${{ inputs.push }}
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
@@ -226,7 +226,7 @@ jobs:
 
       - name: Write image SARIF
         if: ${{ inputs.push }}
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
