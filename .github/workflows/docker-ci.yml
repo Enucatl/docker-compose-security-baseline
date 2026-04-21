@@ -62,7 +62,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       meta_tags: ${{ steps.tags.outputs.meta_tags }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -142,7 +142,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
