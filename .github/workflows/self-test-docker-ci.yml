@@ -24,6 +24,11 @@ jobs:
 
   docker:
     needs: prepare
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
     uses: Enucatl/docker-compose-security-baseline/.github/workflows/docker-ci.yml@main
     with:
       image_name: ${{ needs.prepare.outputs.image_name }}
