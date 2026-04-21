@@ -67,7 +67,7 @@ jobs:
   meta:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.tags.outputs.version }}
       meta_tags: ${{ steps.tags.outputs.meta_tags }}
     steps:
       - uses: actions/checkout@v6
