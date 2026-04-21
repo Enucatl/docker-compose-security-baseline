@@ -72,13 +72,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          describe="$(git describe --exact-match --tags 2>/dev/null || git describe --long --tags 2>/dev/null || true)"
-          if [[ -z "$describe" ]]; then
-            describe="0.0.0-0-g$(git rev-parse --short HEAD)"
+          base_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          short_sha="$(git rev-parse --short HEAD)"
+
+          if [[ -n "$base_tag" ]]; then
+            commits_since_tag="$(git rev-list --count "${base_tag}..HEAD")"
+          else
+            base_tag="0.0"
+            commits_since_tag="$(git rev-list --count HEAD)"
           fi
 
-          version="${describe//-/.}"
-          base_tag="${describe%%-*}"
+          version="${base_tag}-${commits_since_tag}-g${short_sha}"
 
           partials=()
           IFS='.' read -ra parts <<< "$base_tag"
