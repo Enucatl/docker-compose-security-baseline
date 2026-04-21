@@ -30,7 +30,7 @@ The `codex_pipeline.py` helper writes confirmed findings to `validated/` and sen
 
 This repository exports `.github/workflows/docker-ci.yml` as a reusable GitHub workflow.
 
-This repository also self-consumes that workflow as an integration check through `.github/workflows/self-test-docker-ci.yml`. The example uses the same fully qualified reusable-workflow reference external repositories would use. Pull requests build the repo's minimal Debian example image and run the filesystem scan without publishing. Pushes to `main` and tag pushes publish the same image to GHCR and then run the published-image scan.
+This repository also self-consumes that workflow as an integration check through `.github/workflows/self-test-docker-ci.yml`. The example uses the same fully qualified reusable-workflow reference external repositories would use. Pull requests build the repo's minimal Debian example image and run the filesystem scan without publishing. Pushes to `main` and tag pushes publish the same image to GHCR and then run the published-image scan. For this repository's self-test only, Trivy findings stay advisory so SARIF still uploads without blocking the example workflow.
 
 Consume it from another repo with a small wrapper workflow:
 

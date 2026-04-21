@@ -36,4 +36,6 @@ jobs:
       dockerfile: Dockerfile
       platforms: linux/amd64
       push: ${{ github.event_name != 'pull_request' }}
+      fail_on_fs_findings: false
+      fail_on_image_findings: false
     secrets: inherit
