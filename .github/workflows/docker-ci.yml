@@ -82,7 +82,7 @@ jobs:
             commits_since_tag="$(git rev-list --count HEAD)"
           fi
 
-          version="${base_tag}-${commits_since_tag}-g${short_sha}"
+          version="${base_tag}.${commits_since_tag}-g${short_sha}"
 
           partials=()
           IFS='.' read -ra parts <<< "$base_tag"
