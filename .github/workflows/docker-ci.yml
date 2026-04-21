@@ -6,6 +6,14 @@ on:
       image_name:
         required: true
         type: string
+      version:
+        required: false
+        type: string
+        default: ""
+      meta_tags:
+        required: false
+        type: string
+        default: ""
       context:
         required: false
         type: string
@@ -73,10 +81,28 @@ jobs:
       - name: Compute Docker tags from git
         id: tags
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_META_TAGS: ${{ inputs.meta_tags }}
         run: |
           set -euo pipefail
 
-          version="${{ steps.version.outputs.version }}"
+          if [[ -n "${INPUT_VERSION}" ]]; then
+            version="${INPUT_VERSION}"
+          else
+            version="${{ steps.version.outputs.version }}"
+          fi
+
+          if [[ -n "${INPUT_META_TAGS}" ]]; then
+            {
+              echo "version=${version}"
+              echo "meta_tags<<EOF"
+              printf '%s\n' "${INPUT_META_TAGS}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           base_tag="${{ steps.version.outputs.base_tag }}"
 
           partials=()
