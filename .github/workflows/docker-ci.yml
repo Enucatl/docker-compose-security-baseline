@@ -87,6 +87,18 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The workflow publishes tags from meta_tags but scans image_name:version later,
+          # so caller-controlled overrides must provide both values together.
+          if [[ -n "${INPUT_VERSION}" && -z "${INPUT_META_TAGS}" ]]; then
+            echo "inputs.version requires inputs.meta_tags" >&2
+            exit 1
+          fi
+
+          if [[ -z "${INPUT_VERSION}" && -n "${INPUT_META_TAGS}" ]]; then
+            echo "inputs.meta_tags requires inputs.version" >&2
+            exit 1
+          fi
+
           if [[ -n "${INPUT_VERSION}" ]]; then
             version="${INPUT_VERSION}"
           else
