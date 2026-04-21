@@ -32,6 +32,8 @@ This repository exports `.github/workflows/docker-ci.yml` as a reusable GitHub w
 
 This repository also self-consumes that workflow as an integration check through `.github/workflows/self-test-docker-ci.yml`. The example uses the same fully qualified reusable-workflow reference external repositories would use. Pull requests build the repo's minimal Debian example image and run the filesystem scan without publishing. Pushes to `main` and tag pushes publish the same image to GHCR and then run the published-image scan. For this repository's self-test only, Trivy findings stay advisory so SARIF still uploads without blocking the example workflow.
 
+The repository also exports `.github/actions/git-version` as a composite action for repos that need the same git-derived version string in their own jobs before calling the reusable workflow, for example to pass `CARGO_PACKAGE_VERSION` as a Docker build arg.
+
 Consume it from another repo with a small wrapper workflow:
 
 ```yaml

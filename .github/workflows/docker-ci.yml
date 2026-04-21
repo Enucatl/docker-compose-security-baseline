@@ -59,12 +59,16 @@ jobs:
   meta:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.tags.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
       meta_tags: ${{ steps.tags.outputs.meta_tags }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Compute git version
+        id: version
+        uses: ./.github/actions/git-version
 
       - name: Compute Docker tags from git
         id: tags
@@ -72,17 +76,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          base_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
-          short_sha="$(git rev-parse --short HEAD)"
-
-          if [[ -n "$base_tag" ]]; then
-            commits_since_tag="$(git rev-list --count "${base_tag}..HEAD")"
-          else
-            base_tag="0.0"
-            commits_since_tag="$(git rev-list --count HEAD)"
-          fi
-
-          version="${base_tag}.${commits_since_tag}-g${short_sha}"
+          version="${{ steps.version.outputs.version }}"
+          base_tag="${{ steps.version.outputs.base_tag }}"
 
           partials=()
           IFS='.' read -ra parts <<< "$base_tag"

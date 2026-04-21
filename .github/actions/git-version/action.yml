@@ -1,0 +1,49 @@
+name: Git Version
+description: Compute git-derived version metadata for Docker tags and build args.
+
+inputs:
+  default_base_tag:
+    description: Base tag to use when the repository has no tags.
+    required: false
+    default: "0.0"
+
+outputs:
+  version:
+    description: Git-derived version in <base>.<count>-g<sha> format.
+    value: ${{ steps.version.outputs.version }}
+  base_tag:
+    description: Latest reachable git tag, or the configured default base tag.
+    value: ${{ steps.version.outputs.base_tag }}
+  commits_since_tag:
+    description: Number of commits since the latest reachable tag.
+    value: ${{ steps.version.outputs.commits_since_tag }}
+  short_sha:
+    description: Short commit hash for HEAD.
+    value: ${{ steps.version.outputs.short_sha }}
+
+runs:
+  using: composite
+  steps:
+    - id: version
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        base_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+        short_sha="$(git rev-parse --short HEAD)"
+
+        if [[ -n "$base_tag" ]]; then
+          commits_since_tag="$(git rev-list --count "${base_tag}..HEAD")"
+        else
+          base_tag="${{ inputs.default_base_tag }}"
+          commits_since_tag="$(git rev-list --count HEAD)"
+        fi
+
+        version="${base_tag}.${commits_since_tag}-g${short_sha}"
+
+        {
+          echo "version=${version}"
+          echo "base_tag=${base_tag}"
+          echo "commits_since_tag=${commits_since_tag}"
+          echo "short_sha=${short_sha}"
+        } >> "$GITHUB_OUTPUT"
