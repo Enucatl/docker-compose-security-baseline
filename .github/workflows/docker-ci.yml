@@ -68,7 +68,7 @@ jobs:
 
       - name: Compute git version
         id: version
-        uses: ./.github/actions/git-version
+        uses: Enucatl/docker-compose-security-baseline/.github/actions/git-version@main
 
       - name: Compute Docker tags from git
         id: tags
