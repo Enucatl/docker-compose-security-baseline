@@ -24,7 +24,7 @@ jobs:
 
   docker:
     needs: prepare
-    uses: ./.github/workflows/docker-ci.yml
+    uses: Enucatl/docker-compose-security-baseline/.github/workflows/docker-ci.yml@main
     with:
       image_name: ${{ needs.prepare.outputs.image_name }}
       context: .

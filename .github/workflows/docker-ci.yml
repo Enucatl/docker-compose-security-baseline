@@ -1,0 +1,226 @@
+name: Docker CI
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        required: true
+        type: string
+      context:
+        required: false
+        type: string
+        default: .
+      dockerfile:
+        required: false
+        type: string
+        default: Dockerfile
+      platforms:
+        required: false
+        type: string
+        default: linux/amd64
+      target:
+        required: false
+        type: string
+        default: ""
+      build_args:
+        required: false
+        type: string
+        default: ""
+      cache:
+        required: false
+        type: boolean
+        default: true
+      cache_scope:
+        required: false
+        type: string
+        default: ""
+      set_meta_labels:
+        required: false
+        type: boolean
+        default: true
+      push:
+        required: false
+        type: boolean
+        default: false
+      trivy_severity:
+        required: false
+        type: string
+        default: HIGH,CRITICAL
+      fail_on_image_findings:
+        required: false
+        type: boolean
+        default: true
+      fail_on_fs_findings:
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tags.outputs.version }}
+      meta_tags: ${{ steps.tags.outputs.meta_tags }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute Docker tags from git
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          describe="$(git describe --exact-match --tags 2>/dev/null || git describe --long --tags 2>/dev/null || true)"
+          if [[ -z "$describe" ]]; then
+            describe="0.0.0-0-g$(git rev-parse --short HEAD)"
+          fi
+
+          version="${describe//-/.}"
+          base_tag="${describe%%-*}"
+
+          partials=()
+          IFS='.' read -ra parts <<< "$base_tag"
+          accum=""
+          for part in "${parts[@]}"; do
+            accum="${accum:+$accum.}$part"
+            partials+=("$accum")
+          done
+
+          {
+            echo "version=$version"
+            echo "meta_tags<<EOF"
+            echo "type=raw,value=${version}"
+            if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+              echo "type=raw,value=latest"
+            fi
+            if [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+              echo "type=ref,event=branch"
+            elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              echo "type=ref,event=tag"
+            fi
+            for partial in "${partials[@]}"; do
+              echo "type=raw,value=${partial}"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: meta
+    uses: docker/github-builder/.github/workflows/build.yml@v1
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      output: image
+      push: ${{ inputs.push }}
+      context: ${{ inputs.context }}
+      file: ${{ inputs.dockerfile }}
+      platforms: ${{ inputs.platforms }}
+      target: ${{ inputs.target }}
+      build-args: ${{ inputs.build_args }}
+      cache: ${{ inputs.cache }}
+      cache-scope: ${{ inputs.cache_scope }}
+      meta-images: ${{ inputs.image_name }}
+      meta-tags: ${{ needs.meta.outputs.meta_tags }}
+      set-meta-labels: ${{ inputs.set_meta_labels }}
+      sbom: true
+      sign: auto
+    secrets:
+      registry-auths: |
+        - registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+  scan:
+    needs:
+      - meta
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Scan filesystem with Trivy
+        id: fs_table
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.context }}
+          format: table
+          exit-code: "1"
+          scanners: config,secret
+          severity: ${{ inputs.trivy_severity }}
+
+      - name: Write filesystem SARIF
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.context }}
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: "0"
+          scanners: config,secret
+          severity: ${{ inputs.trivy_severity }}
+
+      - name: Scan published image with Trivy
+        id: image_table
+        if: ${{ inputs.push }}
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,secret
+          severity: ${{ inputs.trivy_severity }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write image SARIF
+        if: ${{ inputs.push }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
+          format: sarif
+          output: trivy-image.sarif
+          exit-code: "0"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,secret
+          severity: ${{ inputs.trivy_severity }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload filesystem Trivy SARIF
+        if: always() && hashFiles('trivy-fs.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Upload image Trivy SARIF
+        if: always() && inputs.push && hashFiles('trivy-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Enforce filesystem scan policy
+        if: ${{ inputs.fail_on_fs_findings && steps.fs_table.outcome == 'failure' }}
+        shell: bash
+        run: exit 1
+
+      - name: Enforce image scan policy
+        if: ${{ inputs.push && inputs.fail_on_image_findings && steps.image_table.outcome == 'failure' }}
+        shell: bash
+        run: exit 1
