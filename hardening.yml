@@ -5,7 +5,7 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
-    restart: on-failure:3
+    restart: unless-stopped
 
   hardened-tiny:
     extends:
