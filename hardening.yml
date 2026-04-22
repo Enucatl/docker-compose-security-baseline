@@ -6,9 +6,6 @@ services:
       - no-new-privileges:true
     read_only: true
     restart: on-failure:3
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=32m
-      - /run:rw,noexec,nosuid,size=16m
 
   hardened-tiny:
     extends:

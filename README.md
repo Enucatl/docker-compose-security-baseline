@@ -6,7 +6,7 @@ The profiles centralize common security defaults such as read-only root filesyst
 
 Profiles use Compose `extends` so downstream projects can consume the shared baseline without duplicating hardening blocks in each repository. YAML anchors are useful within a single Compose file, but they are file-local and do not replace this cross-file baseline cleanly.
 
-Hardened profiles mount tmpfs at `/tmp` and `/run` for standard temporary, PID, and lock files while keeping the image filesystem read-only. The `readonly-*` service names remain as compatibility aliases for existing consumers, but new services should use the regular `hardened-*` profiles.
+Hardened profiles keep the image filesystem read-only and drop capabilities by default. Services that need writable temp or runtime directories should declare their own `tmpfs` mounts explicitly. The `readonly-*` service names remain as compatibility aliases for existing consumers, but new services should use the regular `hardened-*` profiles.
 
 The Redis profile intentionally adds no capabilities. Downstream Redis services should mount a project-local named volume at `/data` so Redis can persist data without needing ownership-changing capabilities:
 
