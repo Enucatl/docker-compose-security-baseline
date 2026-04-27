@@ -24,18 +24,6 @@ volumes:
   redis-data:
 ```
 
-The Postgres profile uses `postgres:18`, centrally mounts `postgres-low-memory.conf` from this baseline repository, and starts Postgres with that file as `config_file`. The shared file includes the generated `postgres:18` default config first, then applies only the low-memory overrides. That keeps the tuning in Git once, instead of duplicating it in every downstream repository:
-
-```yaml
-services:
-  db:
-    extends:
-      file: /opt/docker/compose-security-baseline/hardening.yml
-      service: postgres
-```
-
-By default the mounted host path is `/opt/docker/compose-security-baseline/postgres-low-memory.conf`. If the baseline repository lives elsewhere, set `COMPOSE_SECURITY_BASELINE_DIR` for the consuming project before running Compose. Downstream services that override `command`, `image`, or `PGDATA` replace assumptions made by the shared Postgres profile and must keep the `config_file=/etc/postgresql/postgres-low-memory.conf` wiring compatible if they still want these memory settings.
-
 The `codex_pipeline.py` helper writes confirmed findings to `validated/` and sends invalid or unverifiable reports to `rejected/`. Only the files in `validated/` are used when generating `validated/fix_plan.md`, which keeps the remediation plan focused on security issues that were actually verified.
 
 ## Reusable Docker CI workflow

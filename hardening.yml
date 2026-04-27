@@ -81,15 +81,8 @@ services:
   postgres:
     extends:
       service: hardened-medium
-    image: postgres:18
-    volumes:
-      - ${COMPOSE_SECURITY_BASELINE_DIR:-/opt/docker/compose-security-baseline}/postgres-low-memory.conf:/etc/postgresql/postgres-low-memory.conf:ro
     tmpfs:
       - /var/run/postgresql:rw,noexec,nosuid,mode=2775,uid=999,gid=999,size=16m
-    command:
-      - postgres
-      - -c
-      - config_file=/etc/postgresql/postgres-low-memory.conf
     user: 999:999
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
