@@ -64,6 +64,8 @@ The self-test image is intentionally minimal: the repo root `Dockerfile` starts 
 
 The wrapper exposes the common `github-builder` Dockerfile build inputs so callers can tune builds without forking the workflow: `context`, `dockerfile`, `platforms`, `target`, `build_args`, `cache`, `cache_scope`, and `set_meta_labels`. Defaults stay conservative, with `platforms: linux/amd64`, `cache: true`, and `set_meta_labels: true`.
 
+Callers can pass `trivy_skip_dirs` as a comma-separated list when the filesystem scan should ignore vendored or generated directories that are not part of the maintained project surface.
+
 Callers that need to publish forked upstream images or otherwise keep a repo-specific versioning scheme can override the default git-derived tags by passing both `version` and `meta_tags` together. If omitted, the reusable workflow keeps its built-in git-derived version calculation and tag policy.
 
 `fail_on_fs_findings` and `fail_on_image_findings` control whether each Trivy scan fails the workflow. Setting `fail_on_image_findings: false` makes published-image findings advisory: the image is still pushed, findings are uploaded as SARIF, and the workflow stays green.
