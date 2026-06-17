@@ -2,12 +2,6 @@
 set -euo pipefail
 
 ROOT="${1:-/opt/docker}"
-BASELINE="${ROOT}/compose-security-baseline/hardening.yml"
-
-if [[ ! -f "${BASELINE}" ]]; then
-  echo "Missing baseline file: ${BASELINE}" >&2
-  exit 1
-fi
 
 find "${ROOT}" -mindepth 2 -maxdepth 3 -type f \
   \( -name 'docker-compose.yml' -o -name 'docker-compose.yaml' -o -name 'compose.yml' -o -name 'compose.yaml' \) \

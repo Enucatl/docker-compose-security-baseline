@@ -32,9 +32,6 @@ jobs:
     uses: Enucatl/docker-compose-security-baseline/.github/workflows/docker-ci.yml@main
     with:
       image_name: ${{ needs.prepare.outputs.image_name }}
-      context: .
-      dockerfile: Dockerfile
-      platforms: linux/amd64
       push: ${{ github.event_name != 'pull_request' }}
       fail_on_fs_findings: false
       fail_on_image_findings: false

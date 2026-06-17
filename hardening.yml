@@ -49,10 +49,6 @@ services:
     memswap_limit: 3g
     pids_limit: 768
 
-  hardened-no-limits:
-    extends:
-      service: hardened-base
-
   limits-small:
     mem_limit: 256m
     memswap_limit: 256m
