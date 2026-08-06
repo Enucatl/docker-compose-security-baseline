@@ -177,7 +177,7 @@ jobs:
       registry-auths: |
         - registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.github_token || secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.github_token || github.token }}
 
   scan:
     needs:
@@ -226,7 +226,7 @@ jobs:
         uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
         env:
           TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ secrets.github_token || secrets.GITHUB_TOKEN }}
+          TRIVY_PASSWORD: ${{ secrets.github_token || github.token }}
         with:
           version: latest
           image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
@@ -242,7 +242,7 @@ jobs:
         uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
         env:
           TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ secrets.github_token || secrets.GITHUB_TOKEN }}
+          TRIVY_PASSWORD: ${{ secrets.github_token || github.token }}
         with:
           version: latest
           image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
