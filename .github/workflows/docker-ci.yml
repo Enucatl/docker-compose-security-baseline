@@ -66,6 +66,10 @@ on:
         required: false
         type: boolean
         default: true
+    secrets:
+      github_token:
+        description: "GitHub token used to authenticate against GHCR"
+        required: false
 
 jobs:
   meta:
@@ -173,7 +177,7 @@ jobs:
       registry-auths: |
         - registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.github_token || secrets.GITHUB_TOKEN }}
 
   scan:
     needs:
@@ -222,7 +226,7 @@ jobs:
         uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
         env:
           TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ github.token }}
+          TRIVY_PASSWORD: ${{ secrets.github_token || secrets.GITHUB_TOKEN }}
         with:
           version: latest
           image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
@@ -238,7 +242,7 @@ jobs:
         uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
         env:
           TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ github.token }}
+          TRIVY_PASSWORD: ${{ secrets.github_token || secrets.GITHUB_TOKEN }}
         with:
           version: latest
           image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
