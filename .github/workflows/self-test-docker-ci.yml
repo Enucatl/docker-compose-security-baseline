@@ -36,4 +36,4 @@ jobs:
       fail_on_fs_findings: false
       fail_on_image_findings: false
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      registry_token: ${{ secrets.GITHUB_TOKEN }}
