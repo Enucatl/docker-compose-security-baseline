@@ -94,3 +94,8 @@ services:
     user: 999:999
     environment:
       - TZ=Europe/Zurich
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
