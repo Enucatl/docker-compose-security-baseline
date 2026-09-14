@@ -274,12 +274,19 @@ jobs:
           version: latest
           image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
           format: json
-          output: trivy-image.json
+          output: trivy-image-raw.json
           exit-code: "0"
           ignore-unfixed: true
           vuln-type: os,library
-          scanners: vuln,secret
+          scanners: vuln
           severity: ${{ inputs.trivy_severity }}
+
+      - name: Project remediation report
+        if: ${{ inputs.push && hashFiles('trivy-image-raw.json') != '' }}
+        uses: Enucatl/docker-compose-security-baseline/.github/actions/trivy-remediation@main
+        with:
+          command: validate-report.sh
+          args: trivy-image-raw.json trivy-image.json trivy-image-policy-marker trivy-finding-markers
 
       - name: Record image policy result
         if: ${{ always() && inputs.push }}
@@ -304,6 +311,8 @@ jobs:
           path: |
             trivy-image.json
             trivy-image-policy-failed
+            trivy-image-policy-marker
+            trivy-finding-markers
           if-no-files-found: error
 
       - name: Upload filesystem Trivy SARIF

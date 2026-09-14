@@ -1,0 +1,23 @@
+name: Trivy remediation helpers
+description: Versioned validation and patch helpers for Trivy remediation
+inputs:
+  command:
+    required: true
+  args:
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        script="${GITHUB_ACTION_PATH}/../../../scripts/trivy-remediation/v1/${{ inputs.command }}"
+        [[ -x "$script" ]] || { echo "unknown remediation command" >&2; exit 1; }
+        if [[ "${{ inputs.command }}" == validate-eligibility.sh ]]; then
+          # Eligibility is the only helper whose stdout is a step output.
+          "$script" ${{ inputs.args }} >> "$GITHUB_OUTPUT"
+        else
+          # shellcheck disable=SC2086
+          "$script" ${{ inputs.args }}
+        fi
