@@ -211,7 +211,8 @@ jobs:
           codex_args=(
             exec
             --ephemeral
-            --sandbox workspace-write
+            # This enables Codex's workspace-write sandbox and automatic approval
+            # handling. Do not replace it with the dangerous bypass mode.
             --approve-for-me
           )
           if [[ -n "${CODEX_MODEL}" ]]; then
