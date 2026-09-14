@@ -6,10 +6,15 @@ inputs:
   args:
     required: false
     default: ""
+outputs:
+  eligible:
+    description: Whether the source run is eligible for remediation
+    value: ${{ steps.run.outputs.eligible }}
 runs:
   using: composite
   steps:
-    - shell: bash
+    - id: run
+      shell: bash
       run: |
         set -euo pipefail
         script="${GITHUB_ACTION_PATH}/../../../scripts/trivy-remediation/v1/${{ inputs.command }}"
