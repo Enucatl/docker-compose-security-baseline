@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 out=${1:?output patch required}
+mkdir -p "$(dirname -- "$out")"
 git add -N -- $(git ls-files --others --exclude-standard) 2>/dev/null || true
 "$(dirname -- "$0")/validate-diff.sh"
 git diff --binary --no-ext-diff HEAD > "$out"

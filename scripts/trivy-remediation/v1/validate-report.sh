@@ -3,8 +3,7 @@ set -euo pipefail
 
 input=${1:?input report required}
 output=${2:?output report required}
-marker=${3:?policy marker required}
-markers=${4:-}
+markers=${3:-}
 
 [[ -s "$input" ]] || { echo "missing Trivy report" >&2; exit 1; }
 mkdir -p "$(dirname -- "$output")"
@@ -28,7 +27,6 @@ jq -c '
 ' "$input" > "$output.tmp"
 [[ $(wc -c < "$output.tmp") -le 262144 ]] || { rm -f "$output.tmp"; echo "projected report exceeds 256 KiB" >&2; exit 1; }
 mv -- "$output.tmp" "$output"
-printf 'true\n' > "$marker"
 if [[ -n "$markers" ]]; then
   jq -r '.Results[] as $result | $result.Vulnerabilities[]? | "trivy-remediation:" + (.VulnerabilityID // "") + "|" + (.PkgName // "") + "|" + (.Target // $result.Target // "") + "|" + (.FixedVersion // "")' "$output" > "$markers"
 fi
