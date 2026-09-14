@@ -264,7 +264,7 @@ jobs:
           scanners: vuln,secret
           severity: ${{ inputs.trivy_severity }}
 
-      - name: Write image Trivy JSON
+      - name: Write full image Trivy JSON
         if: ${{ inputs.push }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         env:
@@ -274,7 +274,7 @@ jobs:
           version: latest
           image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
           format: json
-          output: trivy-image-raw.json
+          output: trivy-image-full.json
           exit-code: "0"
           ignore-unfixed: true
           vuln-type: os,library
@@ -282,11 +282,11 @@ jobs:
           severity: ${{ inputs.trivy_severity }}
 
       - name: Project remediation report
-        if: ${{ inputs.push && hashFiles('trivy-image-raw.json') != '' }}
+        if: ${{ inputs.push && hashFiles('trivy-image-full.json') != '' }}
         uses: Enucatl/docker-compose-security-baseline/.github/actions/trivy-remediation@main
         with:
           command: validate-report.py
-          args: trivy-image-raw.json trivy-image.json trivy-finding-markers
+          args: trivy-image-full.json trivy-remediation.json trivy-finding-markers
 
       - name: Record image policy result
         if: ${{ always() && inputs.push }}
@@ -303,15 +303,23 @@ jobs:
             echo false > trivy-image-policy-failed
           fi
 
-      - name: Upload image Trivy report
-        if: ${{ always() && inputs.push && hashFiles('trivy-image.json') != '' }}
+      - name: Upload remediation report
+        if: ${{ always() && inputs.push && hashFiles('trivy-remediation.json') != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: trivy-image-report
           path: |
-            trivy-image.json
+            trivy-remediation.json
             trivy-image-policy-failed
             trivy-finding-markers
+          if-no-files-found: error
+
+      - name: Upload full image Trivy report
+        if: ${{ always() && inputs.push && hashFiles('trivy-image-full.json') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-image-full-report
+          path: trivy-image-full.json
           if-no-files-found: error
 
       - name: Upload filesystem Trivy SARIF

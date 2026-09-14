@@ -70,7 +70,7 @@ Callers that need to publish forked upstream images or otherwise keep a repo-spe
 
 ## Opt-in Trivy remediation
 
-When `push: true`, the normal workflow continues to produce the existing table output and SARIF files, and now also writes `trivy-image.json`. The SARIF result feeds GitHub code scanning; the JSON result is machine-readable input for remediation. Both the JSON report and an image-policy result marker are uploaded as the stable `trivy-image-report` artifact, including when the enforced image scan fails.
+When `push: true`, the normal workflow continues to produce the existing table output and SARIF files, and writes a full audit report plus a compact `trivy-remediation.json` report. The SARIF result feeds GitHub code scanning; only the compact report is downloaded by the remediation agent. The `trivy-image-report` artifact contains the compact report, finding markers, and image-policy result marker. The optional `trivy-image-full-report` artifact contains the full Trivy JSON for debugging.
 
 Remediation is opt-in. A consuming repository adds a small `workflow_run` wrapper that calls the reusable workflow after its normal Docker CI workflow completes unsuccessfully. The wrapper must pass the exact source workflow name and trusted branch; the reusable workflow independently verifies the event, repository, run, SHA, conclusion, and artifact ownership through the GitHub API before downloading anything.
 
@@ -100,19 +100,19 @@ jobs:
       provider_base_url: https://openrouter.ai/api/v1
       provider_env_key: OPENROUTER_API_KEY
       report_artifact: trivy-image-report
-      report_path: trivy-image.json
+      report_path: trivy-remediation.json
     secrets:
       model_api_key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
 The consumer must store the model-provider API key as `OPENROUTER_API_KEY` (or pass a different secret through `model_api_key`). The reusable workflow passes the selected model, provider base URL, provider API-key environment-variable name, and wire API to Codex CLI; caller-selected profiles are intentionally unsupported. Codex ignores user configuration, uses a minimal shell environment allowlist, and excludes the provider key from subprocess environments. `codex_version` can be pinned to a supported `@openai/codex` npm version instead of its `latest` default.
 
-The remediation workflow downloads the failed run's report, invokes `codex exec` with the repository's `.agents/skills/trivy-remediation/SKILL.md`, and never gives that process a GitHub write token. A separate proposal job applies the resulting diff, pushes a `codex/trivy-remediation/...` branch, and opens a pull request; it does not merge, publish, or modify `main` directly. The pull request must pass the consuming repository's normal build and Trivy workflow again. Trivy remains the acceptance criterion.
+The remediation workflow downloads the compact report, invokes `codex exec` with the repository's `.agents/skills/trivy-remediation/SKILL.md`, and never gives that process a GitHub write token. The report is limited to fixed HIGH/CRITICAL findings and the stable `target`, `type`, `cve`, `package`, `installed`, `fixed`, and `severity` fields. A separate proposal job applies the resulting diff, pushes a `codex/trivy-remediation/...` branch, and opens a pull request; it does not merge, publish, or modify `main` directly. The pull request must pass the consuming repository's normal build and Trivy workflow again. Trivy remains the acceptance criterion.
 
-If the failed run was not an enforced image-policy failure, the report is missing/invalid, no fixed version exists, or Codex cannot produce a meaningful safe diff, no pull request is opened. The projected report is limited to 100 findings and 256 KiB. Patches are limited to 20 files and 128 KiB and reject security-policy paths, traversal, links, special files, and invalid modes; the same policy is checked before upload and application. Open remediation PRs suppress duplicate finding markers. The skill prohibits CVE ignores, weakened scan policy, unrelated upgrades, and speculative architectural changes.
+If the failed run was not an enforced image-policy failure, the report is missing/invalid, no fixed version exists, or Codex cannot produce a meaningful safe diff, no pull request is opened. The projected report is limited to 100 findings and 256 KiB. Patches are limited to 20 files and 128 KiB, contain text diffs only, and reject security-policy paths, traversal, links, special files, and invalid modes; the same policy is checked before upload and application. Open remediation PRs suppress duplicate finding markers. The skill prohibits CVE ignores, weakened scan policy, unrelated upgrades, and speculative architectural changes.
 
 The dedicated OpenRouter key is intentionally capped at `$5 monthly` using the provider's per-key spending limit and monthly reset period. No provider billing or management API is used by this repository.
 
 The example limits remediation to branches in the consuming repository. That keeps the provider key away from fork-originated workflow code; fork pull requests should be remediated through their normal review process.
 
-The self-test in this repository intentionally does not invoke Codex. End-to-end remediation testing requires a provider API key and a deliberately vulnerable image with a known fixed HIGH/CRITICAL finding; this repository validates the workflow and shell paths statically instead.
+The self-test in this repository intentionally does not invoke Codex. End-to-end remediation testing requires a provider API key and a deliberately vulnerable image with a known fixed HIGH/CRITICAL finding; this repository validates the workflow and helper paths statically instead.

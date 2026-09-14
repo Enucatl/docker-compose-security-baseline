@@ -80,6 +80,10 @@ def validate_patch(path: Path) -> None:
         fail("empty patch")
     if len(patch) > MAX_BYTES:
         fail("patch is too large")
+    if re.search(rb"^GIT binary patch$", patch, re.MULTILINE) or re.search(
+        rb"^Binary files .* differ$", patch, re.MULTILINE
+    ):
+        fail("binary patches are not allowed")
 
     paths = re.findall(rb"^diff --git a/(.*) b/.*$", patch, re.MULTILINE)
     if len(paths) > MAX_FILES:

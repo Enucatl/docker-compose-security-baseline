@@ -8,7 +8,7 @@ on:
       trusted_branch: {required: false, type: string, default: ""}
       base_branch: {required: false, type: string, default: ""}
       report_artifact: {required: false, type: string, default: trivy-image-report}
-      report_path: {required: false, type: string, default: trivy-image.json}
+      report_path: {required: false, type: string, default: trivy-remediation.json}
       skill_path: {required: false, type: string, default: .agents/skills/trivy-remediation/SKILL.md}
       model: {required: false, type: string, default: ""}
       provider_base_url: {required: false, type: string, default: ""}
@@ -66,7 +66,7 @@ jobs:
           set -euo pipefail
           policy="$RUNNER_TEMP/eligibility-report/trivy-image-policy-failed"
           [[ -s "$policy" && "$(tr -d '[:space:]' < "$policy")" == true ]] || { echo clear=false >> "$GITHUB_OUTPUT"; exit 0; }
-          jq -e '.Results | length > 0' "$RUNNER_TEMP/eligibility.json" >/dev/null || { echo clear=false >> "$GITHUB_OUTPUT"; exit 0; }
+          jq -e '.findings | length > 0' "$RUNNER_TEMP/eligibility.json" >/dev/null || { echo clear=false >> "$GITHUB_OUTPUT"; exit 0; }
           body=$(gh pr list --repo "$REPOSITORY" --state open --json body --jq '.[].body' || true)
           while IFS= read -r marker; do
             [[ -z "$marker" ]] && continue
@@ -98,16 +98,15 @@ jobs:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ inputs.run_id }}
-      - name: Validate and sanitize report
+      - name: Validate remediation report
         env:
           REPORT_ROOT: ${{ runner.temp }}/trivy-report
           REPORT_PATH: ${{ inputs.report_path }}
         run: |
           set -euo pipefail
           path="${REPORT_PATH#./}"
-          mkdir -p .trivy-remediation-input
           test -s "$REPORT_ROOT/$path"
-      - name: Project sanitized report
+      - name: Normalize remediation report
         uses: Enucatl/docker-compose-security-baseline/.github/actions/trivy-remediation@main
         with:
           command: validate-report.py

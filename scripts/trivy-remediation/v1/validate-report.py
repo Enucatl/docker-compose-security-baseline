@@ -13,15 +13,14 @@ from typing import Any
 MAX_FINDINGS = 100
 MAX_OUTPUT_BYTES = 262_144
 SEVERITIES = {"HIGH", "CRITICAL"}
-FIELDS = (
-    "VulnerabilityID",
-    "PkgName",
-    "InstalledVersion",
-    "FixedVersion",
-    "Severity",
-    "Target",
-    "Class",
-    "Type",
+COMPACT_FIELDS = (
+    "target",
+    "type",
+    "cve",
+    "package",
+    "installed",
+    "fixed",
+    "severity",
 )
 
 
@@ -30,37 +29,102 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
-def project(report: Any) -> dict[str, list[dict[str, Any]]]:
+def text(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def fixed_versions(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else text(value).split(",")
+    return [
+        version.strip()
+        for version in values
+        if isinstance(version, str) and version.strip()
+    ]
+
+
+def compact_finding(
+    vulnerability: dict[str, Any], result: dict[str, Any]
+) -> dict[str, Any] | None:
+    if vulnerability.get("Severity") not in SEVERITIES:
+        return None
+    fixed = fixed_versions(vulnerability.get("FixedVersion"))
+    if not fixed:
+        return None
+    return {
+        "target": text(vulnerability.get("Target") or result.get("Target")),
+        "type": text(vulnerability.get("Type") or result.get("Type")),
+        "cve": text(vulnerability.get("VulnerabilityID")),
+        "package": text(vulnerability.get("PkgName")),
+        "installed": text(vulnerability.get("InstalledVersion")),
+        "fixed": fixed,
+        "severity": text(vulnerability.get("Severity")),
+    }
+
+
+def project_full(report: Any) -> dict[str, list[dict[str, Any]]]:
     if not isinstance(report, dict) or not isinstance(report.get("Results"), list):
         fail("invalid Trivy report")
 
-    results: list[dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
     for result in report["Results"]:
         if not isinstance(result, dict):
             continue
-        vulnerabilities: list[dict[str, Any]] = []
-        for vulnerability in result.get("Vulnerabilities") or []:
-            if (
-                not isinstance(vulnerability, dict)
-                or vulnerability.get("Severity") not in SEVERITIES
-            ):
+        vulnerabilities = result.get("Vulnerabilities")
+        if not isinstance(vulnerabilities, list):
+            continue
+        for vulnerability in vulnerabilities:
+            if not isinstance(vulnerability, dict):
                 continue
-            vulnerabilities.append(
-                {field: vulnerability.get(field) for field in FIELDS}
-            )
-        if vulnerabilities:
-            results.append(
-                {
-                    "Target": result.get("Target"),
-                    "Class": result.get("Class"),
-                    "Type": result.get("Type"),
-                    "Vulnerabilities": vulnerabilities,
-                }
-            )
+            finding = compact_finding(vulnerability, result)
+            if finding is not None:
+                findings.append(finding)
 
-    if sum(len(result["Vulnerabilities"]) for result in results) > MAX_FINDINGS:
+    return compact_findings(findings)
+
+
+def compact_findings(findings: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    if len(findings) > MAX_FINDINGS:
         fail("too many vulnerability findings")
-    return {"Results": results}
+    return {"findings": findings}
+
+
+def validate_compact(report: Any) -> dict[str, list[dict[str, Any]]]:
+    if not isinstance(report, dict) or not isinstance(report.get("findings"), list):
+        fail("invalid compact Trivy report")
+
+    findings: list[dict[str, Any]] = []
+    for finding in report["findings"]:
+        if not isinstance(finding, dict) or any(
+            field not in finding for field in COMPACT_FIELDS
+        ):
+            fail("invalid compact Trivy finding")
+        if any(
+            not isinstance(finding[field], str)
+            for field in COMPACT_FIELDS
+            if field != "fixed"
+        ):
+            fail("invalid compact Trivy finding")
+        if finding["severity"] not in SEVERITIES or not isinstance(
+            finding["fixed"], list
+        ):
+            fail("invalid compact Trivy finding")
+        fixed = fixed_versions(finding["fixed"])
+        if not fixed or len(fixed) != len(finding["fixed"]):
+            fail("invalid compact Trivy finding")
+        findings.append(
+            {
+                field: fixed if field == "fixed" else finding[field]
+                for field in COMPACT_FIELDS
+            }
+        )
+
+    return compact_findings(findings)
+
+
+def project(report: Any) -> dict[str, list[dict[str, Any]]]:
+    if isinstance(report, dict) and "findings" in report:
+        return validate_compact(report)
+    return project_full(report)
 
 
 def write_atomically(path: Path, data: bytes) -> None:
@@ -101,15 +165,14 @@ def main() -> int:
 
     if len(sys.argv) == 4:
         markers: list[str] = []
-        for result in projected["Results"]:
-            for vulnerability in result["Vulnerabilities"]:
-                markers.append(
-                    "trivy-remediation:"
-                    f"{vulnerability.get('VulnerabilityID') or ''}|"
-                    f"{vulnerability.get('PkgName') or ''}|"
-                    f"{vulnerability.get('Target') or result.get('Target') or ''}|"
-                    f"{vulnerability.get('FixedVersion') or ''}"
-                )
+        for finding in projected["findings"]:
+            markers.append(
+                "trivy-remediation:"
+                f"{finding['cve']}|"
+                f"{finding['package']}|"
+                f"{finding['target']}|"
+                f"{','.join(finding['fixed'])}"
+            )
         Path(sys.argv[3]).write_text(
             "\n".join(markers) + ("\n" if markers else ""), encoding="utf-8"
         )
