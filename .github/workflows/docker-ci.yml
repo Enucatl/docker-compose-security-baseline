@@ -95,6 +95,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          # By default, publish the git-derived version
+          # <base-tag>.<commits-since-base-tag>-g<short-sha>, plus cumulative
+          # base-tag prefixes. For example, base tag 1.2.3 and two additional
+          # commits at abc123 produce 1.2.3.2-gabc123, 1, 1.2, and 1.2.3;
+          # main also gets latest, and branch/tag refs get their ref name.
+          # Callers can replace this complete tag set by passing version and
+          # meta_tags together.
           # The workflow publishes tags from meta_tags but scans image_name:version later,
           # so caller-controlled overrides must provide both values together.
           if [[ -n "${INPUT_VERSION}" && -z "${INPUT_META_TAGS}" ]]; then
@@ -188,6 +195,9 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # Jobs run on separate runners, so scan must check out the caller's
+      # repository again for the filesystem scan. Git history is not needed;
+      # one commit is sufficient and avoids downloading the full repository.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 1
@@ -195,7 +205,7 @@ jobs:
       - name: Scan filesystem with Trivy
         id: fs_table
         continue-on-error: true
-        uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           version: latest
           scan-type: fs
@@ -207,7 +217,7 @@ jobs:
           skip-dirs: ${{ inputs.trivy_skip_dirs }}
 
       - name: Write filesystem SARIF
-        uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           version: latest
           scan-type: fs
@@ -223,7 +233,7 @@ jobs:
         id: image_table
         if: ${{ inputs.push }}
         continue-on-error: true
-        uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.registry_token || github.token }}
@@ -239,7 +249,7 @@ jobs:
 
       - name: Write image SARIF
         if: ${{ inputs.push }}
-        uses: aquasecurity/trivy-action@128d9a8815401077119ad09f6ca1892d422c387b
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.registry_token || github.token }}
