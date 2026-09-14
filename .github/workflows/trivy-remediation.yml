@@ -162,7 +162,6 @@ jobs:
         with:
           ref: ${{ inputs.checkout_ref }}
           fetch-depth: 0
-          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: trivy-remediation-diff
