@@ -10,11 +10,14 @@ case "${REPORT_PATH#./}" in ""|/*|..|../*|*/../*|*\\*) echo "invalid report path
 
 api() { gh api -H 'Accept: application/vnd.github+json' "$1"; }
 run_json=$(api "repos/${CURRENT_REPOSITORY}/actions/runs/${RUN_ID}")
-jq -e --arg repo "$CURRENT_REPOSITORY" --arg workflow "$SOURCE_WORKFLOW_NAME" --arg branch "$TRUSTED_BRANCH" --arg sha "$CHECKOUT_REF" '
+if ! jq -e --arg repo "$CURRENT_REPOSITORY" --arg workflow "$SOURCE_WORKFLOW_NAME" --arg branch "$TRUSTED_BRANCH" --arg sha "$CHECKOUT_REF" '
   .repository.full_name == $repo and .id == ('$RUN_ID') and .event == "push" and
   .name == $workflow and .head_branch == $branch and .head_sha == $sha and
   .conclusion == "failure" and .head_repository.full_name == $repo
-' <<<"$run_json" >/dev/null
+' <<<"$run_json" >/dev/null; then
+  printf 'eligible=false\n'
+  exit 0
+fi
 
 artifacts=$(api "repos/${CURRENT_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?per_page=100")
 jq -e --arg name "$REPORT_ARTIFACT" 'any(.artifacts[]?; .name == $name and .workflow_run.id == ('$RUN_ID') and .expired == false)' <<<"$artifacts" >/dev/null
