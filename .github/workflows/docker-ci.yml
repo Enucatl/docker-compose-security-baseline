@@ -285,7 +285,7 @@ jobs:
         if: ${{ inputs.push && hashFiles('trivy-image-raw.json') != '' }}
         uses: Enucatl/docker-compose-security-baseline/.github/actions/trivy-remediation@main
         with:
-          command: validate-report.sh
+          command: validate-report.py
           args: trivy-image-raw.json trivy-image.json trivy-finding-markers
 
       - name: Record image policy result

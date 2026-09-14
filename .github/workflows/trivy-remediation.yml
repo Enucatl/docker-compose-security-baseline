@@ -54,7 +54,7 @@ jobs:
         if: steps.check.outputs.eligible == 'true'
         uses: Enucatl/docker-compose-security-baseline/.github/actions/trivy-remediation@main
         with:
-          command: validate-report.sh
+          command: validate-report.py
           args: "${{ runner.temp }}/eligibility-report/${{ inputs.report_path }} ${{ runner.temp }}/eligibility.json ${{ runner.temp }}/finding-markers"
       - name: Suppress findings covered by open remediation PR
         id: duplicates
@@ -110,7 +110,7 @@ jobs:
       - name: Project sanitized report
         uses: Enucatl/docker-compose-security-baseline/.github/actions/trivy-remediation@main
         with:
-          command: validate-report.sh
+          command: validate-report.py
           args: "${{ runner.temp }}/trivy-report/${{ inputs.report_path }} .trivy-remediation-input/${{ inputs.report_path }} ${{ runner.temp }}/finding-markers"
       - name: Install Codex CLI
         env:
