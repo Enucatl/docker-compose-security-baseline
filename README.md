@@ -67,3 +67,50 @@ Callers can pass `trivy_skip_dirs` as a comma-separated list when the filesystem
 Callers that need to publish forked upstream images or otherwise keep a repo-specific versioning scheme can override the default git-derived tags by passing both `version` and `meta_tags` together. If omitted, the reusable workflow keeps its built-in git-derived version calculation and tag policy.
 
 `fail_on_fs_findings` and `fail_on_image_findings` control whether each Trivy scan fails the workflow. Setting `fail_on_image_findings: false` makes published-image findings advisory: the image is still pushed, findings are uploaded as SARIF, and the workflow stays green.
+
+## Opt-in Trivy remediation
+
+When `push: true`, the normal workflow continues to produce the existing table output and SARIF files, and now also writes `trivy-image.json`. The SARIF result feeds GitHub code scanning; the JSON result is machine-readable input for remediation. Both the JSON report and an image-policy result marker are uploaded as the stable `trivy-image-report` artifact, including when the enforced image scan fails.
+
+Remediation is opt-in. A consuming repository adds a small `workflow_run` wrapper that calls the reusable workflow after its normal Docker CI workflow completes unsuccessfully:
+
+```yaml
+name: Trivy remediation
+
+on:
+  workflow_run:
+    # This must match the `name` of the consuming repository's normal Docker CI workflow.
+    workflows: [Docker CI]
+    types: [completed]
+
+jobs:
+  remediate:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    uses: Enucatl/docker-compose-security-baseline/.github/workflows/trivy-remediation.yml@main
+    with:
+      run_id: ${{ github.event.workflow_run.id }}
+      checkout_ref: ${{ github.event.workflow_run.head_sha }}
+      model: deepseek/deepseek-v4.1-flash
+      provider_base_url: https://openrouter.ai/api/v1
+      provider_env_key: OPENROUTER_API_KEY
+      report_artifact: trivy-image-report
+      report_path: trivy-image.json
+      # Set profile instead when the selected Codex profile is available to the runner.
+      # profile: remediation-provider
+    secrets:
+      model_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+```
+
+The consumer must store the model-provider API key as `OPENROUTER_API_KEY` (or pass a different secret through `model_api_key`). The reusable workflow passes the selected `model`, optional Codex `profile`, provider base URL, provider API-key environment-variable name, and wire API to Codex CLI; it does not implement an LLM client or require OpenRouter/DeepSeek. For another provider, change those inputs and the secret. `codex_version` can be pinned to a supported `@openai/codex` npm version instead of its `latest` default.
+
+The remediation workflow downloads the failed run's report, invokes `codex exec` with the repository's `.agents/skills/trivy-remediation/SKILL.md`, and never gives that process a GitHub write token. A separate proposal job applies the resulting diff, pushes a `codex/trivy-remediation/...` branch, and opens a pull request; it does not merge, publish, or modify `main` directly. The pull request must pass the consuming repository's normal build and Trivy workflow again. Trivy remains the acceptance criterion.
+
+If the failed run was not an enforced image-policy failure, the report is missing/invalid, no fixed version exists, or Codex cannot produce a meaningful safe diff, no pull request is opened. The skill prohibits CVE ignores, weakened scan policy, unrelated upgrades, and speculative architectural changes.
+
+The example limits remediation to branches in the consuming repository. That keeps the provider key away from fork-originated workflow code; fork pull requests should be remediated through their normal review process.
+
+The self-test in this repository intentionally does not invoke Codex. End-to-end remediation testing requires a provider API key and a deliberately vulnerable image with a known fixed HIGH/CRITICAL finding; this repository validates the workflow and shell paths statically instead.

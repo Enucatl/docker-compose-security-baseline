@@ -264,6 +264,48 @@ jobs:
           scanners: vuln,secret
           severity: ${{ inputs.trivy_severity }}
 
+      - name: Write image Trivy JSON
+        if: ${{ inputs.push }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.registry_token || github.token }}
+        with:
+          version: latest
+          image-ref: ${{ inputs.image_name }}:${{ needs.meta.outputs.version }}
+          format: json
+          output: trivy-image.json
+          exit-code: "0"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,secret
+          severity: ${{ inputs.trivy_severity }}
+
+      - name: Record image policy result
+        if: ${{ always() && inputs.push }}
+        env:
+          IMAGE_TABLE_OUTCOME: ${{ steps.image_table.outcome }}
+          FAIL_ON_IMAGE_FINDINGS: ${{ inputs.fail_on_image_findings }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${FAIL_ON_IMAGE_FINDINGS}" == "true" && "${IMAGE_TABLE_OUTCOME}" == "failure" ]]; then
+            echo true > trivy-image-policy-failed
+          else
+            echo false > trivy-image-policy-failed
+          fi
+
+      - name: Upload image Trivy report
+        if: ${{ always() && inputs.push && hashFiles('trivy-image.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-report
+          path: |
+            trivy-image.json
+            trivy-image-policy-failed
+          if-no-files-found: error
+
       - name: Upload filesystem Trivy SARIF
         if: always() && hashFiles('trivy-fs.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
