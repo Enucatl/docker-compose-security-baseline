@@ -1,38 +1,42 @@
 # Docker Compose Security Baseline
 
-Shared Docker Compose hardening profiles for the repositories in `/opt/docker`.
+Reusable security building blocks for Docker Compose projects and their image CI.
 
-The profiles centralize common security defaults such as read-only root filesystems, dropped capabilities, `no-new-privileges`, `restart: unless-stopped`, memory and PID limits, and `memswap_limit` values that match `mem_limit` so containers fail with OOM instead of using swap.
+| Component | Goal |
+| --- | --- |
+| [Hardening profiles](#hardening-profiles) | Apply consistent least-privilege runtime settings and resource limits to Compose services. |
+| [Reusable Docker CI](#reusable-docker-ci-workflow) | Build, publish, sign, and scan Docker images from one shared GitHub Actions workflow. |
+| [Trivy AI remediation](#trivy-ai-agentic-remediation) | Turn an enforced, fixable image-vulnerability failure into a tightly scoped remediation pull request. |
 
-Profiles use Compose `extends` so downstream projects can consume the shared baseline without duplicating hardening blocks in each repository. YAML anchors are useful within a single Compose file, but they are file-local and do not replace this cross-file baseline cleanly.
+The goal is to run all of my homelab containers in significantly hardened environments than is (unfortunately) customary in the docker world, where almost everything runs no limits. 
 
-Hardened profiles keep the image filesystem read-only and drop capabilities by default. Services that need writable temp or runtime directories should declare their own `tmpfs` mounts explicitly. The `readonly-*` service names remain as compatibility aliases for existing consumers, but new services should use the regular `hardened-*` profiles.
+The three parts tie nicely together, since I aim to build images with 0 HIGH or CRITICAL unfixed CVEs, run them in containers with userns_remap, under a nonprivileged user, dropping all capabilities, and with a read-only filesystem.
+Trivy reviews the images weekly, and any new fixable vulnerabilities are patched by pull requests created by a codex agent github action, with human review.
 
-The Redis profile intentionally adds no capabilities. Downstream Redis services should mount a project-local named volume at `/data` so Redis can persist data without needing ownership-changing capabilities:
+## Hardening profiles
+
+The profiles in [`hardening.yml`](hardening.yml) make the safe runtime posture the default: no Linux capabilities, `no-new-privileges`, a read-only root filesystem, and `restart: unless-stopped`. Size profiles add matched memory and swap limits plus a PID limit, so a service fails under pressure instead of consuming host swap indefinitely.
+
+Profiles use Compose `extends`, which lets multiple Compose files share one baseline. Add only the writable paths and privileges a particular image genuinely needs; a read-only root filesystem commonly needs a project volume or `tmpfs` for its runtime state.
 
 ```yaml
 services:
-  redis:
+  app:
     extends:
       file: /opt/docker/compose-security-baseline/hardening.yml
-      service: redis
-    image: redis:latest
-    volumes:
-      - redis-data:/data
-
-volumes:
-  redis-data:
+      service: hardened-small
+    image: ghcr.io/your-org/your-app:latest
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
 ```
 
 ## Reusable Docker CI workflow
 
-This repository exports `.github/workflows/docker-ci.yml` as a reusable GitHub workflow.
+The reusable [`Docker CI`](.github/workflows/docker-ci.yml) workflow gives Docker repositories one build-and-scan path. It calculates Git-derived Docker image version tags, delegates building, SBOM generation, signing, and optional publishing to Docker's `github-builder` workflow, then scans the checked-out filesystem. When publishing is enabled, it also scans the pushed image, uploads SARIF to GitHub code scanning.
 
-This repository also self-consumes that workflow as an integration check through `.github/workflows/self-test-docker-ci.yml`. The example uses the same fully qualified reusable-workflow reference external repositories would use. Pull requests build the repo's minimal Debian example image and run the filesystem scan without publishing. Pushes to `main` and tag pushes publish the same image to GHCR and then run the published-image scan. For this repository's self-test only, Trivy findings stay advisory so SARIF still uploads without blocking the example workflow.
+The vulnerability scan can be enforcing or advisory, so a repository can introduce scanning before making it a merge gate.
 
-The repository also exports `.github/actions/git-version` as a composite action for repos that need the same git-derived version string in their own jobs before calling the reusable workflow, for example to pass `CARGO_PACKAGE_VERSION` as a Docker build arg.
-
-Consume it from another repo with a small wrapper workflow:
+Create a small wrapper in the consuming repository:
 
 ```yaml
 name: Docker CI
@@ -45,41 +49,32 @@ on:
 
 jobs:
   docker:
-    uses: your-org/compose-security-baseline/.github/workflows/docker-ci.yml@main
+    uses: Enucatl/docker-compose-security-baseline/.github/workflows/docker-ci.yml@main
     with:
       image_name: ghcr.io/your-org/your-image
-      context: .
-      platforms: linux/amd64
       push: ${{ github.event_name != 'pull_request' }}
     secrets: inherit
 ```
 
-The reusable workflow computes Docker metadata tags, delegates the build to Docker's `docker/github-builder` reusable workflow, always runs the Trivy filesystem scan, and runs the Trivy image scan when the image was pushed.
+The default tag is derived from the latest reachable Git tag and commit SHA. Repositories with their own versioning can replace it by passing `version` and `meta_tags` together. See the [workflow reference](#reusable-docker-ci-workflow-reference) for all build, scan, and versioning inputs.
 
-`docker/github-builder` owns the build, publish, SBOM, and signing path. The reusable workflow keeps the existing git-derived tag computation, always scans the checked-out filesystem locally, and scans the published image at `${image_name}:${version}` only when `push: true`.
+## Trivy AI agentic remediation
 
-The self-test image is intentionally minimal: the repo root `Dockerfile` starts from `debian:13-slim` and its default command prints `hello world`. Its publish target shape is `ghcr.io/<owner>/<repo>`, using the repository path normalized to lowercase before passing it into the reusable workflow.
+The optional [`Trivy Remediation`](.github/workflows/trivy-remediation.yml) workflow proposes a minimal fix after the normal Docker CI workflow fails its image-vulnerability policy. It is deliberately a proposal path, not an automatic deployment path, and has strict guardrails:
 
-The wrapper exposes the common `github-builder` Dockerfile build inputs so callers can tune builds without forking the workflow: `context`, `dockerfile`, `platforms`, `target`, `build_args`, `cache`, `cache_scope`, and `set_meta_labels`. Defaults stay conservative, with `platforms: linux/amd64`, `cache: true`, and `set_meta_labels: true`.
+1. It verifies that the failed run belongs to the same repository, trusted branch, exact commit, and expected source workflow.
+2. It gives Codex only a compact report of fixed HIGH and CRITICAL findings, then validates the resulting text-only patch against a narrow path, size, and file-count policy.
+3. A separate job applies the validated patch on a new branch and opens a pull request. It never changes `main`, merges, or publishes an image.
 
-Callers can pass `trivy_skip_dirs` as a comma-separated list when the filesystem scan should ignore vendored or generated directories that are not part of the maintained project surface.
+Trivy remains the acceptance criterion: the proposed PR must pass the repository's regular Docker CI workflow. If the source failure was not an enforced image-policy failure, the report has no actionable finding, or no safe patch is produced, no PR is opened.
 
-Callers that need to publish forked upstream images or otherwise keep a repo-specific versioning scheme can override the default git-derived tags by passing both `version` and `meta_tags` together. If omitted, the reusable workflow keeps its built-in git-derived version calculation and tag policy.
-
-`fail_on_fs_findings` and `fail_on_image_findings` control whether each Trivy scan fails the workflow. Setting `fail_on_image_findings: false` makes published-image findings advisory: the image is still pushed, findings are uploaded as SARIF, and the workflow stays green.
-
-## Opt-in Trivy remediation
-
-When `push: true`, the normal workflow continues to produce the existing table output and SARIF files, and writes a full audit report plus a compact `trivy-remediation.json` report. The SARIF result feeds GitHub code scanning; only the compact report is downloaded by the remediation agent. The `trivy-image-report` artifact contains the compact report, finding markers, and image-policy result marker. The optional `trivy-image-full-report` artifact contains the full Trivy JSON for debugging.
-
-Remediation is opt-in. A consuming repository adds a small `workflow_run` wrapper that calls the reusable workflow after its normal Docker CI workflow completes unsuccessfully. The wrapper must pass the exact source workflow name and trusted branch; the reusable workflow independently verifies the event, repository, run, SHA, conclusion, and artifact ownership through the GitHub API before downloading anything.
+Add this wrapper alongside the Docker CI workflow. `workflows` must exactly match the normal workflow's `name`.
 
 ```yaml
 name: Trivy remediation
 
 on:
   workflow_run:
-    # This must match the `name` of the consuming repository's normal Docker CI workflow.
     workflows: [Docker CI]
     types: [completed]
 
@@ -98,20 +93,113 @@ jobs:
       trusted_branch: main
       model: deepseek/deepseek-v4.1-flash
       provider_base_url: https://openrouter.ai/api/v1
-      report_artifact: trivy-image-report
-      report_path: trivy-remediation.json
     secrets:
       model_api_key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-The consumer must store the model-provider API key as `OPENROUTER_API_KEY` (or pass a different secret through `model_api_key`). The reusable workflow sends the selected model and the provider's Responses API endpoint to the official `openai/codex-action`; `provider_base_url` is extended with `/responses`. `codex_version` can be pinned to a supported `@openai/codex` npm version instead of its `latest` default.
+Use a dedicated, spending-limited provider key. Do not enable the wrapper for untrusted fork/branch code; the example limits remediation to runs whose head repository is the current repository.
 
-The remediation workflow downloads the compact report, invokes `openai/codex-action@v1` with the `:workspace` permission profile and `drop-sudo` safety strategy, and never gives Codex a GitHub write token. The report is limited to fixed HIGH/CRITICAL findings and the stable `target`, `type`, `cve`, `package`, `installed`, `fixed`, and `severity` fields. A separate proposal job applies the resulting diff, pushes a `codex/trivy-remediation/...` branch, and opens a pull request; it does not merge, publish, or modify `main` directly. The pull request must pass the consuming repository's normal build and Trivy workflow again. Trivy remains the acceptance criterion.
+# Reference
 
-If the failed run was not an enforced image-policy failure, the report is missing/invalid, no fixed version exists, or Codex cannot produce a meaningful safe diff, no pull request is opened. The projected report is limited to 100 findings and 256 KiB. Patches are limited to 20 files and 128 KiB, contain text diffs only, and reject security-policy paths, traversal, links, special files, and invalid modes; the same policy is checked before upload and application. Open remediation PRs suppress duplicate finding markers. The skill prohibits CVE ignores, weakened scan policy, unrelated upgrades, and speculative architectural changes.
+## Hardening profiles reference
 
-The dedicated OpenRouter key is intentionally capped at `$5 monthly` using the provider's per-key spending limit and monthly reset period. No provider billing or management API is used by this repository.
+All profiles are Compose services intended for `extends`. `hardened-base` supplies `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `read_only: true`, and `restart: unless-stopped`.
 
-The example limits remediation to branches in the consuming repository. That keeps the provider key away from fork-originated workflow code; fork pull requests should be remediated through their normal review process.
+| Profile | Memory / PIDs | Purpose |
+| --- | --- | --- |
+| `hardened-base` | — | Shared least-privilege runtime settings. |
+| `hardened-tiny` | 128 MiB / 64 | Hardened profile for very small services. |
+| `hardened-small` | 256 MiB / 128 | Hardened profile for small services. |
+| `hardened-medium` | 512 MiB / 192 | Hardened profile for medium services. |
+| `hardened-large` | 1 GiB / 256 | Hardened profile for large services. |
+| `hardened-xlarge` | 2 GiB / 512 | Hardened profile for extra-large services. |
+| `hardened-xxlarge` | 3 GiB / 768 | Hardened profile for the largest services. |
+| `limits-small` | 256 MiB / 128 | Resource limits only; no hardening settings. |
+| `limits-medium` | 512 MiB / 192 | Resource limits only; no hardening settings. |
+| `limits-large` | 1 GiB / 256 | Resource limits only; no hardening settings. |
+| `limits-xlarge` | 2 GiB / 512 | Resource limits only; no hardening settings. |
+| `limits-xxlarge` | 3 GiB / 768 | Resource limits only; no hardening settings. |
+| `postgres` | 512 MiB / 192 | `hardened-medium`, PostgreSQL runtime `tmpfs`, UID/GID `999`, and a `pg_isready` health check. |
+| `redis` | 256 MiB / 128 | `hardened-small`, Redis 8, UID/GID `999`, `TZ=Europe/Zurich`, and a `redis-cli ping` health check. |
 
-The self-test in this repository intentionally does not invoke Codex. End-to-end remediation testing requires a provider API key and a deliberately vulnerable image with a known fixed HIGH/CRITICAL finding; this repository validates the workflow and helper paths statically instead.
+Every size profile sets `memswap_limit` equal to `mem_limit`. Extend a `limits-*` profile only when the service cannot use the hardened base; otherwise start with its `hardened-*` counterpart. Service-specific writable directories, volumes, ports, users, and environment remain the consuming project's responsibility.
+
+## Reusable Docker CI workflow reference
+
+Call `Enucatl/docker-compose-security-baseline/.github/workflows/docker-ci.yml@main` with `workflow_call`. `image_name` is the only required input.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `image_name` | required | Full image name, for example `ghcr.io/org/image`. |
+| `version` | empty | Image tag to scan; must be supplied together with `meta_tags`. |
+| `meta_tags` | empty | `docker/metadata-action` tag rules; must be supplied together with `version`. |
+| `context` | `.` | Docker build context and filesystem-scan path. |
+| `dockerfile` | `Dockerfile` | Dockerfile path, passed to `github-builder` as `file`. |
+| `platforms` | `linux/amd64` | Target platforms for the image build. |
+| `target` | empty | Optional Dockerfile target stage. |
+| `build_args` | empty | Build arguments in `github-builder` format. |
+| `cache` | `true` | Enable the builder cache. |
+| `cache_scope` | empty | Optional cache scope. |
+| `set_meta_labels` | `true` | Apply Docker metadata labels. |
+| `push` | `false` | Publish the image; also enables image scanning and remediation artifacts. |
+| `trivy_severity` | `HIGH,CRITICAL` | Comma-separated Trivy severity threshold. |
+| `trivy_skip_dirs` | empty | Comma-separated filesystem paths to exclude from both filesystem scans. |
+| `fail_on_image_findings` | `true` | Fail after the image scan finds matching findings; `false` makes it advisory. |
+| `fail_on_fs_findings` | `true` | Fail after the filesystem scan finds matching findings; `false` makes it advisory. |
+
+| Secret | Required | Description |
+| --- | --- | --- |
+| `registry_token` | no | Optional GHCR token. The workflow falls back to the built-in `github.token` for registry authentication. |
+
+The workflow uses the latest Trivy CLI through a commit-pinned `trivy-action`. Filesystem scans check misconfigurations and secrets; image scans check vulnerabilities and secrets, ignore unfixed vulnerabilities, and scan OS and library packages. SARIF is uploaded under `trivy-fs` and, when publishing, `trivy-image`.
+
+On a pushed image, the workflow also uploads these artifacts:
+
+| Artifact | Contents |
+| --- | --- |
+| `trivy-image-report` | Compact actionable findings, finding markers, and the image-policy result used by remediation. |
+| `trivy-image-full-report` | Full Trivy JSON, useful for investigation. |
+
+### Git version action
+
+[`git-version`](.github/actions/git-version/action.yml) is a composite action that produces the default version used by Docker CI. It needs a checkout with tags available.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `default_base_tag` | `0.0` | Base tag used when the repository has no reachable Git tag. |
+
+| Output | Description |
+| --- | --- |
+| `version` | `<base-tag>.<commits-since-base-tag>-g<short-sha>`. |
+| `base_tag` | Latest reachable Git tag or `default_base_tag`. |
+| `commits_since_tag` | Commits after `base_tag`. |
+| `short_sha` | Short SHA of `HEAD`. |
+
+## Trivy AI agentic remediation reference
+
+Call `Enucatl/docker-compose-security-baseline/.github/workflows/trivy-remediation.yml@main` from a `workflow_run` wrapper. The wrapper needs `actions: read`, `contents: write`, and `pull-requests: write` permissions because the final proposal job pushes a branch and opens a PR.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `run_id` | required | Numeric ID of the failed source workflow run. |
+| `checkout_ref` | required | Full 40-character commit SHA from that run. |
+| `source_workflow_name` | required | Exact `name` of the expected Docker CI workflow. |
+| `trusted_branch` | repository default branch | Branch the source run must have used. |
+| `base_branch` | repository default branch | Base branch for the proposed PR. |
+| `report_artifact` | `trivy-image-report` | Name of the remediation-report artifact. |
+| `report_path` | `trivy-remediation.json` | Path of the compact report within the artifact. |
+| `skill_path` | `.agents/skills/trivy-remediation/SKILL.md` | Repository path given to Codex for its remediation rules. |
+| `model` | empty | Model name passed to `openai/codex-action`. |
+| `provider_base_url` | empty | Provider base URL; the workflow appends `/responses`. |
+| `provider_env_key` | `OPENAI_API_KEY` | Currently declared but not consumed by the workflow. |
+| `provider_name` | empty | Currently declared but not consumed by the workflow. |
+| `provider_wire_api` | `responses` | Currently declared but not consumed by the workflow. |
+| `codex_version` | `latest` | `@openai/codex` version used by the action. |
+
+| Secret | Required | Description |
+| --- | --- | --- |
+| `model_api_key` | yes | API key passed only to `openai/codex-action`. |
+
+Eligibility requires a failed `push` run from the same repository and trusted branch, with the given SHA, matching workflow name, a live matching report artifact, and an enforced image-policy failure. Duplicate finding markers in an open remediation PR stop another proposal.
+
+The report includes only fixed HIGH or CRITICAL findings and the fields `target`, `type`, `cve`, `package`, `installed`, `fixed`, and `severity`. It is limited to 100 findings and 256 KiB. Codex runs with workspace-only permissions and no GitHub write token. Its patch may contain at most 20 regular text files and 128 KiB; links, special files, nonstandard modes, traversal, workflow/agent paths, and security-policy or Trivy configuration paths are rejected. The remediation instructions also prohibit CVE ignores, weakened scanning, unrelated upgrades, and speculative changes.
