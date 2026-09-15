@@ -1,6 +1,6 @@
 # Docker Compose Security Baseline
 
-Reusable security building blocks for Docker Compose projects and their image CI.
+Reusable security building blocks for Docker Compose projects and their image CI/CD.
 
 | Component | Goal |
 | --- | --- |
