@@ -11,6 +11,7 @@ on:
       report_path: {required: false, type: string, default: trivy-remediation.json}
       skill_path: {required: false, type: string, default: .agents/skills/trivy-remediation/SKILL.md}
       model: {required: false, type: string, default: ""}
+      effort: {required: false, type: string, default: ""}
       provider_base_url: {required: false, type: string, default: ""}
       provider_env_key: {required: false, type: string, default: OPENAI_API_KEY}
       provider_name: {required: false, type: string, default: ""}
@@ -125,6 +126,7 @@ jobs:
           openai-api-key: ${{ secrets.model_api_key }}
           responses-api-endpoint: ${{ inputs.provider_base_url && format('{0}/responses', inputs.provider_base_url) || '' }}
           model: ${{ inputs.model }}
+          effort: ${{ inputs.effort }}
           permission-profile: ":workspace"
           safety-strategy: drop-sudo
           prompt-file: .trivy-remediation-prompt.md
